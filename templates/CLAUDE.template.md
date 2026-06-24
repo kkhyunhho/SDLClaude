@@ -50,8 +50,15 @@ laboratory where all devices compose. To make that composition cheap,
 | Runtime | Docker container (`--privileged` — needed for USB hardware) |
 | OS      | Ubuntu 24.04 (Noble)                                        |
 | Python  | **>= 3.12** (uniform floor across all projects)            |
+| Env     | **one shared conda env `elec`** — every project is `pip install -e`'d into it; do NOT use per-project venvs |
 | Run as  | **root** — device-node rebuild and `ftdi_sio` detach need `/sys` writes and `os.mknod` |
 | Dev tool| Claude Code (CLI / VS Code extension)                       |
+
+All projects share the single conda env **`elec`** (new terminals activate
+it automatically). Each driver package is installed editable
+(`pip install -e`) into `elec`, so integration layers import siblings
+directly — no per-project venv, no `sys.path` bootstrap. Run `ruff`,
+`mypy`, `pytest` from the activated env (no `.venv/bin/` prefix).
 
 The container's `/dev` is a private tmpfs, so USB device nodes go stale
 after re-enumeration. Device-touching entrypoints rebuild them at startup.
