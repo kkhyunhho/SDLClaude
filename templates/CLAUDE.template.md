@@ -7,149 +7,212 @@ with code in the **{{PROJECT_NAME}}** project.
 
 {{PROJECT_OVERVIEW}}
 
+This project follows the unified conventions in **CommonClaude**
+(`kkhyunhho/CommonClaude`) — the single, self-contained source of truth
+for every device-control and integration project in this workspace. The
+sections below specialize those conventions for this project; where this
+file is silent, CommonClaude governs.
+
 {{AUTHORITY_SECTION}}
+
+## Big picture: one cell, many devices
+
+Every project here either **controls one machine** or **integrates two or
+more** into an automated cell. The end goal is a single self-driving
+laboratory where all devices compose. To make that composition cheap,
+**every project exposes the same shape**:
+
+- a Python **driver library** (`src/<codename>/`) — one class, one device;
+- a thin **FastAPI server** (`server/`) exposing `/v1/*` JSON so any
+  client (ESP32, lab website, an integration layer) drives it over HTTP;
+- an optional **integration layer** that composes several devices, talking
+  to them **over HTTP** for loose coupling, or **in-process** (direct
+  import) when real-time safety interlocks demand zero network latency
+  (the *hybrid* model).
+
+```
+[device /v1]  [device /v1]  [device /v1]    each device: independently controllable
+      \            |            /
+       \           |           /
+      [integration /v1]   composes devices (HTTP + in-process hybrid)
+             |
+      [lab website / ESP32]   HTTP clients
+```
 
 ## Environment
 
-This project runs inside a **Docker container** with Claude Code as the
-primary development tool.
+| Item    | Detail                                                      |
+|---------|-------------------------------------------------------------|
+| Runtime | Docker container (`--privileged` — needed for USB hardware) |
+| OS      | Ubuntu 24.04 (Noble)                                        |
+| Python  | **>= 3.12** (uniform floor across all projects)            |
+| Run as  | **root** — device-node rebuild and `ftdi_sio` detach need `/sys` writes and `os.mknod` |
+| Dev tool| Claude Code (CLI / VS Code extension)                       |
 
-| Item    | Detail                                |
-|---------|---------------------------------------|
-| Runtime | Docker container (`--privileged`)     |
-| OS      | Ubuntu 24.04 (Noble)                  |
-| Dev tool| Claude Code (CLI / VS Code extension) |
+The container's `/dev` is a private tmpfs, so USB device nodes go stale
+after re-enumeration. Device-touching entrypoints rebuild them at startup.
 
-## Commands
+## Repository layout (standard skeleton)
 
-| Purpose          | Command                          |
-|------------------|----------------------------------|
-| Lint a Python file | `ruff check <file>.py`         |
-| Check formatting | `ruff format --check <file>.py`  |
-| Auto-format      | `ruff format <file>.py`          |
+Every project uses the same skeleton. `<codename>` is the short device
+codename (see Naming).
 
----
+```
+<ProjectFolder>/
+├── CLAUDE.md                 this file
+├── README.md                 setup + run
+├── DESIGN.md                 architecture + rationale
+├── ToDo.md                   append-only task log
+├── LearnedPatterns.md        Problem/Cause/Fix/Rule log
+├── pyproject.toml            build, deps, ruff + mypy config
+├── src/<codename>/           the driver library (one class per device)
+├── server/                   FastAPI /v1 bridge (app.py, routes.py,
+│                             schemas.py, errors.py, <codename>.toml)
+├── tests/                    production unit tests (CI)
+│   └── server/               server tests against a Fake device
+└── claude_test/              HIL / debug scripts (exempt from style rules)
+```
 
-## 1. Rule Priority
+Integration projects add **`workflow.md`** (the operating procedure) and
+import the drivers they compose via the documented sibling-import
+bootstrap.
 
-Project-level `CLAUDE.md` sections take precedence over any inherited
-ruleset. Specific rules beat general ones; the more-specific context wins.
+## Naming (codename-hybrid)
 
----
+A short **codename** identifies the device across code; a descriptive
+**CamelCase** name identifies the project and class.
 
-## 2. Code Convention
+| Slot              | Style                       | Example                  |
+|-------------------|-----------------------------|--------------------------|
+| Repo folder       | `CamelCase`, descriptive    | `SyringePumpController`  |
+| Python package    | `lower_codename`            | `src/sy01b/`             |
+| Driver class      | `CamelCase` (= folder)      | `SyringePumpController`  |
+| Console scripts   | `<codename>-<verb>`         | `sy01b-diagnose`, `sy01b-server` |
+| FastAPI server    | `<codename>-server`         | `sy01b-server`           |
+| Established codenames | —                       | `sy01b`, `entris_ii`, `picus2`, `mks_motor` |
 
-All code follows the [MIT CommLab Coding and Comment Style](https://mitcommlab.mit.edu/broad/commkit/coding-and-comment-style/).
+Within code: variables/functions `lower_case` (nouns vs verbs), classes
+`CamelCase`, constants `lower_case`, modules `lowercase`. **Physical
+quantities carry a unit suffix** — `travel_z_mm`, `target_uL`,
+`speed_rpm` — so cross-device integration cannot silently mix units.
 
-### Naming
+## Driver API contract
 
-- **Variables and classes** are nouns; **functions and methods** are verbs.
-- Names must be pronounceable and straightforward.
-- Name length is proportional to scope: short for local, descriptive for
-  broad. Avoid abbreviations unless self-explanatory.
+So an integration layer can drive any device uniformly, every driver
+library exposes:
+
+- **One class per device**, named for the project (`SyringePumpController`).
+- **Lifecycle**: `setup()` / `close()` (or a context manager). Open the
+  transport once; never auto-initialize motion implicitly.
+- **Verbs**: a small set of imperative methods for actions (`aspirate_uL`,
+  `move_valve_to_port`, ...).
+- **Queries**: read-only `query_*` / `diagnose()` that never move anything
+  and are safe to call repeatedly.
+- **Device identity by stable USB `VID:PID`**, never a `/dev/ttyUSB*` index
+  (which renumbers). Resolve the port at runtime.
+- **Exception hierarchy**: a single `DeviceError` base with specific
+  subclasses (e.g. `NotInitializedError`, `PlungerOverloadError`). Attach
+  `command_sent`, `raw_reply`, `error_code` so the server can serialize a
+  stable error envelope. This is what the FastAPI layer maps to HTTP.
+
+## FastAPI server standard (`/v1`)
+
+The `server/` package is a **thin** bridge — all device logic stays in the
+driver. Mirror the reference implementation (`sy01b-server`):
+
+| File              | Role                                                          |
+|-------------------|---------------------------------------------------------------|
+| `app.py`          | `create_app(device_factory=None, *, config=None)` factory + lifespan. Inject a real driver in prod, a Fake in tests. `app.state.{device, config, lock, last_diagnose}`. |
+| `routes.py`       | `APIRouter(prefix="/v1")`. Each handler acquires `app.state.lock`; blocking driver calls run via `run_in_threadpool`. |
+| `schemas.py`      | Pydantic request/response models (units in field names). |
+| `errors.py`       | `register_exception_handlers` — driver exception to HTTP status + stable JSON `{error, code, command, raw_reply_hex, message}`. No traceback leaks. |
+| `<codename>.toml` | Bench config (`.example` committed, real file gitignored). |
+| `__main__.py`     | `python -m server --config ...` entrypoint. |
+
+API rules:
+
+- Everything under `/v1`. OpenAPI tags **Discovery** (read-only, repeat-safe)
+  / **Motion** (state-changing) / **Low-level (deprecated)**.
+- Mandatory endpoints: `GET /v1/health`, `GET /v1/diagnose`,
+  `GET /v1/status`; motion as `POST`.
+- **Single in-flight**: `--workers 1` + `asyncio.Lock`. Commands never
+  interleave; a long op holds the lock for its whole duration.
+- **No auto-init**: the server forwards calls and never starts motion the
+  client did not request.
+- Driver opened once at startup (lifespan), closed at shutdown.
+
+Standard error to status map: `400` invalid arg/command; `409` wrong state
+(not-initialized, overflow); `500` device fault (overload, init-failed);
+`502` protocol; `503` transport-closed / diagnostic; `504` timeout.
+
+## Integration & safety model (hybrid)
+
+- An integration layer is itself a device-shaped unit: it MAY expose its
+  own `/v1` server and be composed by a higher layer.
+- **Loose / human / remote control uses HTTP.** The website and ESP32 are
+  just HTTP clients of a `/v1` server.
+- **Real-time cross-device safety uses in-process calls.** When one
+  device's fault must stop another *now* (e.g. a motor `ConnectionError`
+  must halt the pump), route through direct import, not HTTP — network
+  latency/timeout is unacceptable for an interlock.
+- **Fail-safe is mandatory.** A comms fault stops all motion first, then
+  aborts. Document the exact policy per project in Hardware notes.
+
+## Code style
+
+MIT CommLab style. **80-column** lines, **4-space** indent (no tabs), one
+statement per line. Comment the *why*, never restate the *what*; delete
+stale comments. **English only** in code, comments, docstrings, commits,
+issues, PRs. Public functions/classes get **Google-style docstrings**
+(`Args:`/`Returns:`/`Raises:`), stating what and why. **No magic numbers**
+— name them (module constants / an `OPERATOR CONFIGURATION` block).
 
 {{LANGUAGE_NAMING}}
 
-### Structure
+## Debug file management
 
-- **80-column limit** for all new code.
-- One statement per line.
-- Indent with **4 spaces** (never tabs).
-- Place operators on the **left side** of continuation lines.
+`tests/` = production CI tests; `claude_test/` = HIL / debug / one-off
+scripts (exempt from the 80-col limit and mandatory docstrings).
+`claude_test/README.md` indexes the directory — add a row per script.
+Promote stable logic into `src/` or `tests/` and delete the scratch copy.
 
-### Spacing
+## Testing strategy
 
-- One space after commas, none before: `foo(a, b, c)`.
-- One space on each side of `=`, `==`, `<`, `>`, etc.
+- **Pure logic** (frame builders, parsers, unit conversion, status decode)
+  is unit-tested in `tests/` — fast, no hardware.
+- **Motion / I/O** is **HIL-verified** via `claude_test/` against the real
+  device; it is intentionally not unit-tested.
+- The `server/` is tested against an injected **Fake device** in
+  `tests/server/`.
+- No magic numbers, no hardcoding to match test inputs; fix logic, not the
+  branch.
 
-### Comments
+## Linting & types
 
-- Use complete sentences. Only comment for **context** or **non-obvious
-  choices** — never restate what the code already says.
-- Outdated comments are worse than none. Keep them current or delete them.
+Ruff (`line-length = 80`) + mypy, configured in `pyproject.toml`. Before
+considering a change done: `ruff check`, `ruff format --check`, `mypy`.
 
-### Language
-
-- All code comments, docstrings, commit messages, documentation (including
-  README), GitHub issues, and pull requests are written in **English**.
-
-### Documentation
-
-- All public functions and classes have **docstrings** (PEP 257 / Google
-  style). A docstring states **what** and **why**, not **how**. Include
-  `Args:`, `Returns:`, and `Raises:` when applicable.
-
----
-
-## 3. Debug File Management
-
-| Location       | What goes there                                     |
-|----------------|-----------------------------------------------------|
-| `tests/`       | Production-quality tests that are part of CI.       |
-| `claude_test/` | Debug scripts, one-off experiments, diagnostics.    |
-
-- Create debug files directly in `claude_test/` with a one-line purpose
-  docstring at the top.
-- `claude_test/README.md` is the index — add a row per new file describing
-  what it does and what was learned.
-- `claude_test/` is **exempt** from the 80-column limit and mandatory
-  docstrings. Anything promoted into `tests/` must conform fully.
-
----
-
-## 4. Task Management
+## Task management
 
 {{TASK_WORKFLOW}}
 
----
-
-## 5. Testing Rules
-
-1. **No magic numbers** — define meaningful constants, never bare literals.
-2. **No hardcoding to match test inputs** — fix the logic, not the branch.
-3. **Code quality first** — readability and correctness beat green CI.
-
----
-
-## 6. Linting
-
-All Python code must pass **Ruff** before committing.
-
-1. **Line length**: 80 columns (`line-length = 80`).
-2. Before committing, run `ruff check <file>.py` and
-   `ruff format --check <file>.py`.
-3. Fix before committing; use `ruff format <file>.py` to auto-format.
-
----
-
-## 7. Research Before Coding
-
-Before calling into an unfamiliar library, API, or CLI, verify its actual
-interface rather than guessing from memory.
-
-1. Consult official documentation first (Context7 MCP or web search).
-2. Search the repository for prior implementations of the same interface.
-3. Trust documentation over intuition; read the source over guessing.
-
----
-
-## 8. Learned Patterns
+## Learned Patterns
 
 Treat [`LearnedPatterns.md`](LearnedPatterns.md) as part of the workflow.
+Read relevant sections before drafting a `ToDo.md` entry (cite `(see LP §X)`);
+after a task, append new gotchas in **Problem / Cause / Fix / Rule** form
+(§1 Recurring / §2 Gotchas / §3 Library quirks / §4 Workflow / §5
+Environment / §99 Uncategorized). Promote stable patterns into this file.
 
-1. **Before drafting a `ToDo.md` entry**, read the relevant sections.
-2. **Reference applicable patterns** in the ToDo entry as `(see LP §X)`.
-3. **After a task**, append any new recurring issue, gotcha, library quirk,
-   workflow lesson, or environment note using the **Problem / Cause / Fix /
-   Rule** format, classified into §1–§5 (or §99 Uncategorized).
-4. **Promote** patterns that stabilize across many tasks into a formal rule
-   in this file, and remove them from `LearnedPatterns.md`.
+## Research before coding
 
----
+Verify a real interface before calling it: read the driver source and the
+device manual, search the repo for prior usage, trust docs over memory.
+Hardware quirks are real and documented — do not guess.
 
 ## Hardware / domain notes
 
-<!-- TODO: Fill in this project's hardware, protocol, ports, and gotchas.
-     Never let Claude invent these — they must come from real specs and
-     bench observation. Identify devices by stable USB VID:PID, document
-     any protocol quirks, and cross-link to LearnedPatterns.md. -->
+<!-- TODO: Fill in this project's device(s), protocol, USB VID:PID table,
+     units, fault/fail-safe policy, and front-panel prerequisites. Never
+     invent hardware facts — they come from real specs and bench
+     observation. Cross-link gotchas to LearnedPatterns.md. -->

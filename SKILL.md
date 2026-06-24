@@ -40,23 +40,33 @@ question the user already answered in their prompt):
    - `Inherit siblings` — defers to one or more sibling CLAUDE.md files
      (ask which). Used by integration layers that import sibling drivers
      via `sys.path`.
+6. **Device codename** — the short lowercase codename used for the Python
+   package (`src/<codename>/`), console scripts (`<codename>-diagnose`),
+   and the FastAPI server (`<codename>-server`). Examples: `sy01b`,
+   `entris_ii`, `picus2`, `mks_motor`. For an integration layer, use a
+   short cell codename. (If not given, ask — there is no safe default.)
 
 ## Step 2 — assemble CLAUDE.md
 
-Read `templates/CLAUDE.template.md`. It is the full canonical ruleset.
-Fill the placeholders and prune the conditional blocks:
+Read `templates/CLAUDE.template.md`. It is the full canonical ruleset and
+already bakes in the unified standards (repo skeleton, codename naming,
+driver API contract, FastAPI `/v1` server, hybrid integration model,
+Python >= 3.12, testing strategy). Fill the placeholders and prune the
+conditional blocks:
 
-- Replace `{{PROJECT_NAME}}`, `{{PROJECT_OVERVIEW}}`.
+- Replace `{{PROJECT_NAME}}`, `{{PROJECT_OVERVIEW}}`, and every
+  `<codename>` occurrence with the device codename from step 1.
 - `{{LANGUAGE_NAMING}}`: always insert `templates/python-conventions.md`;
   if language is `C + Python`, append `templates/c-conventions.md` after it.
 - `{{TASK_WORKFLOW}}`: if `Full`, insert `templates/full-workflow.md` and
-  append `templates/full-git-sections.md` after §8; if `Light`, insert
+  append `templates/full-git-sections.md` at the end; if `Light`, insert
   `templates/light-workflow.md` and add no git sections.
-- `{{AUTHORITY_SECTION}}`: if `Independent`, state this file is canonical;
-  if `Inherit siblings`, insert an "Authority order" section listing the
-  named sibling files and "when this file is silent, follow those".
-- `{{DOMAIN_SECTION}}`: leave a stub heading (`## Hardware / domain notes`)
-  with a one-line TODO for the user to fill — never invent hardware facts.
+- `{{AUTHORITY_SECTION}}`: if `Independent`, state this file is canonical
+  under CommonClaude; if `Inherit siblings`, insert an "Authority order"
+  section listing the named sibling files and "when this file is silent,
+  follow those".
+- The `## Hardware / domain notes` stub at the end stays as a TODO for the
+  user — never invent hardware facts.
 
 Keep the house formatting: 80-col prose, markdown tables, `[text](link)`
 relative links.
