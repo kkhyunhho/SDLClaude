@@ -55,8 +55,13 @@ not run git or create issues.
 
 ## Layout
 
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the target lab's composition
+hierarchy (device → cell → stage → lab) and two-stage / two-NUC deployment
+topology.
+
 | Path | Role |
 |------|------|
+| `ARCHITECTURE.md` | Target lab: composition hierarchy + two-stage/two-NUC topology |
 | `SKILL.md` | Entry point — questions, assembly, file-writing instructions |
 | `templates/CLAUDE.template.md` | Canonical ruleset with placeholders |
 | `templates/python-conventions.md` | Python naming table (always inserted) |
