@@ -1,6 +1,6 @@
 # Lab architecture — Levels, Composition, and Phases
 
-The target system the CommonClaude projects build into: a self-driving
+The target system the SDLClaude projects build into: a self-driving
 electrochemistry lab. Three distinct concepts; keep them separate.
 (Counts are the current plan; TBD items will firm up.)
 
@@ -90,6 +90,6 @@ boundary, so neither side has to adopt the other's style.
 ## Why incremental + uniform contract
 
 Building one device/cell at a time is safe **because** every unit follows
-the same CommonClaude contract (`/v1` shape, error envelope, lifecycle).
+the same SDLClaude contract (`/v1` shape, error envelope, lifecycle).
 Uniformity is what keeps the later "compose into one class" cheap; the one
 risk of incremental work — interface drift — is prevented by the standard.

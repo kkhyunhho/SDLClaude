@@ -7,11 +7,11 @@ with code in the **{{PROJECT_NAME}}** project.
 
 {{PROJECT_OVERVIEW}}
 
-This project follows the unified conventions in **CommonClaude**
-(`kkhyunhho/CommonClaude`) — the single, self-contained source of truth
+This project follows the unified conventions in **SDLClaude**
+(`kkhyunhho/SDLClaude`) — the single, self-contained source of truth
 for every device-control and integration project in this workspace. The
 sections below specialize those conventions for this project; where this
-file is silent, CommonClaude governs.
+file is silent, SDLClaude governs.
 
 {{AUTHORITY_SECTION}}
 
@@ -202,6 +202,23 @@ Promote stable logic into `src/` or `tests/` and delete the scratch copy.
 
 Ruff (`line-length = 80`) + mypy, configured in `pyproject.toml`. Before
 considering a change done: `ruff check`, `ruff format --check`, `mypy`.
+
+## Refactor cadence
+
+Iterative work tends to be *additive* — new code piled on — which breeds
+dead code, duplication, and bloated files that cost more to read/edit every
+time. Counter it with periodic **behavior-preserving** refactor passes.
+
+- **Trigger:** roughly every **~400 net lines added** since the last pass,
+  or when any **single file exceeds ~500 lines**. Offer the pass at that
+  point rather than waiting to be asked.
+- **The pass (no behaviour change — build/tests stay green):**
+  1. delete unused code;
+  2. consolidate / dedupe — extract shared helpers/components/modules;
+  3. reorder by causality / data-flow so reading top-to-bottom follows the
+     logic;
+  4. split oversized files into focused modules.
+- **Keep refactor commits separate from feature commits.**
 
 ## Task management
 

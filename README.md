@@ -1,4 +1,4 @@
-# CommonClaude
+# SDLClaude
 
 A Claude Code **skill** that bootstraps a new project's documentation from
 the shared conventions used across this workspace's device-driver and
@@ -38,7 +38,7 @@ Claude Code discovers it. In this workspace it lives at
 survives container recreation).
 
 ```
-git clone https://github.com/kkhyunhho/CommonClaude.git \
+git clone https://github.com/kkhyunhho/SDLClaude.git \
     /workspace/.claude/skills/new-project
 ```
 
@@ -62,6 +62,7 @@ topology.
 | Path | Role |
 |------|------|
 | `ARCHITECTURE.md` | Target lab: composition hierarchy + two-stage/two-NUC topology |
+| `DESIGN_SYSTEM.md` | Shared L1 **web** visual standard: colour, font, units, mandatory layout |
 | `SKILL.md` | Entry point — questions, assembly, file-writing instructions |
 | `templates/CLAUDE.template.md` | Canonical ruleset with placeholders |
 | `templates/python-conventions.md` | Python naming table (always inserted) |

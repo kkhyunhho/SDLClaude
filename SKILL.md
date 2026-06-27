@@ -62,7 +62,7 @@ conditional blocks:
   append `templates/full-git-sections.md` at the end; if `Light`, insert
   `templates/light-workflow.md` and add no git sections.
 - `{{AUTHORITY_SECTION}}`: if `Independent`, state this file is canonical
-  under CommonClaude; if `Inherit siblings`, insert an "Authority order"
+  under SDLClaude; if `Inherit siblings`, insert an "Authority order"
   section listing the named sibling files and "when this file is silent,
   follow those".
 - The `## Hardware / domain notes` stub at the end stays as a TODO for the
