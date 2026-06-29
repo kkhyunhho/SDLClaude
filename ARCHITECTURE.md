@@ -46,6 +46,25 @@ whole SDL          Phases coordinated across NUCs (networked substrate)
   interlock: one motor faults → stop the whole gantry now). Never route a
   safety interlock over the network.
 
+### Cell boundary rule — "must they be coordinated to move?"
+
+Put devices in the **same cell** (one process, in-process control) when any
+holds:
+
+- they must move **together / in lockstep** (e.g. paired Z motors),
+- moving them **at the same time risks collision or interference** so a
+  controller must coordinate/interlock them in real time,
+- a **fault in one must instantly stop another**.
+
+Put them in **separate cells** (network-coordinated) when they are
+**independent — moving simultaneously is always safe** and loose
+coordination over the network suffices.
+
+Adding a device later: if it is coordination-coupled to an existing cell,
+**the cell grows** (same server, same port); if it is independent, it is a
+**new cell** (new server, new port). The cell boundary = the real-time
+coordination/safety boundary, nothing else.
+
 ## Phase — SDL hardware stage
 
 Which hardware, on which NUC. The whole SDL is built in two phases, each on
@@ -75,17 +94,50 @@ that satisfies the standard cell / `/v1` interface.** The foreign style
 stays isolated behind the adapter; conversion happens only at that
 boundary, so neither side has to adopt the other's style.
 
-## Coordination substrate (OPEN decision)
+## Coordination substrate — DECIDED: recursive HTTP `/v1`
 
-- **Within a cell** → in-process Python calls (real-time, safe).
-- **Across cells / across NUCs** → a networked substrate. Candidates:
-  - **ROS 2** — best fit for arms + multi-axis motion + cameras; Actions
-    give long-running goals with feedback/cancel (pipetting, arm moves);
-    node-per-device; real-time capable. Heavier / learning curve.
-  - **MQTT broker** — lighter pub/sub + last-will; telemetry + commands
-    are easy, long-running-action semantics must be built by hand.
-- Decide before wiring cross-cell / cross-NUC composition. Until then,
-  compose cells in-process on a single NUC.
+- **Within a cell** → in-process Python calls (real-time, safe). No network.
+- **Across cells / NUCs** → **HTTP `/v1`, applied recursively.** Each cell
+  runs one FastAPI `/v1` server (one port). A higher orchestrator is just an
+  HTTP **client** of those cell servers, and may itself expose its own `/v1`
+  server to the layer above — the same contract repeats at every tier.
+
+Why HTTP over ROS 2 / MQTT (for now): the `/v1` servers already exist and
+the web + ESP32 are already HTTP clients; the standard already wraps foreign
+robot arms behind a `/v1` adapter; cross-cell work is mostly **sequential
+orchestration** (dispense → transfer → weigh), not hard-real-time (that
+stays in-process per cell); and HTTP is far simpler to learn, debug (curl /
+OpenAPI), and test. **ROS 2 is the fallback** to revisit *only* when a
+concrete need appears — camera video streaming, rich arm action
+feedback/cancel, or tight multi-cell motion sync — and even then only for
+that part; the cell edge stays HTTP.
+
+Ports appear **once per running `/v1` server** (i.e. per cell, and per
+orchestrator that exposes one). A port is a *server's network address on a
+NUC*, unrelated to the device's USB/serial port. Assign distinct ports per
+server on a shared NUC; record them in a port table.
+
+```
+                      ┌─────────────────────────── whole SDL ───────────────┐
+   client (browser/   │  SDL orchestrator  (optional /v1 server, own port)   │
+   ESP32/CLI) ──HTTP──▶        │ HTTP client of each Phase                    │
+                      │        ▼                                             │
+                      │  Phase-1 orchestrator (NUC A, /v1 server, own port)  │
+                      │        │ HTTP client of each cell                    │
+                      │   ┌────┼───────────────┬──────────────┐             │
+                      │   ▼    ▼               ▼              ▼              │
+                      │ cell  cell           cell           cell   ← each:   │
+                      │ :17054 :17056         :17058         …      one /v1  │
+                      └───┼──────────────────────────────────────── server ─┘
+                          │ in-process Python (NO network, real-time safety)
+                     ┌────┼────┬─────────┐
+                     ▼    ▼    ▼         ▼
+                  pump  balance  motor … (L0 drivers)  ── USB/serial ─▶ hardware
+```
+
+Build order this implies: a single cell + its `/v1` server first (done for
+SyringeLiquidHandler); add an orchestrator only when a **second** cell
+exists to coordinate. Until then there is nothing to orchestrate.
 
 ## Why incremental + uniform contract
 
