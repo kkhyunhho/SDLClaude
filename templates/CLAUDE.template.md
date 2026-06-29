@@ -50,13 +50,13 @@ laboratory where all devices compose. To make that composition cheap,
 | Runtime | Docker container (`--privileged` — needed for USB hardware) |
 | OS      | Ubuntu 24.04 (Noble)                                        |
 | Python  | **>= 3.12** (uniform floor across all projects)            |
-| Env     | **one shared conda env `elec`** — every project is `pip install -e`'d into it; do NOT use per-project venvs |
+| Env     | **one shared conda env `sdl`** — every project is `pip install -e`'d into it; do NOT use per-project venvs |
 | Run as  | **root** — device-node rebuild and `ftdi_sio` detach need `/sys` writes and `os.mknod` |
 | Dev tool| Claude Code (CLI / VS Code extension)                       |
 
-All projects share the single conda env **`elec`** (new terminals activate
+All projects share the single conda env **`sdl`** (new terminals activate
 it automatically). Each driver package is installed editable
-(`pip install -e`) into `elec`, so integration layers import siblings
+(`pip install -e`) into `sdl`, so integration layers import siblings
 directly — no per-project venv, no `sys.path` bootstrap. Run `ruff`,
 `mypy`, `pytest` from the activated env (no `.venv/bin/` prefix).
 
